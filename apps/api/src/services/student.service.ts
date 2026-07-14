@@ -26,6 +26,7 @@ export async function enrollStudent(workspaceId: string, batchId: string, member
     }
   }
 
+  
   const existing = await prisma.batchMembership.findUnique({
     where: { membershipId_batchId: { membershipId, batchId } },
   });
