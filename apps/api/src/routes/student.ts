@@ -1,3 +1,4 @@
+// apps/api/src/routes/student.ts
 import { Router } from 'express';
 import { z } from 'zod';
 import * as studentService from '../services/student.service';
@@ -10,18 +11,19 @@ const router = Router();
 // ==========================================
 
 const enrollStudentSchema = z.object({
-  organizationId: z.string(),
-  membershipId: z.string(),
+  workspaceId: z.string().min(1, 'workspaceId is required'),
+  membershipId: z.string().min(1, 'membershipId is required'),
 });
 
+// POST /api/v1/batches/:batchId/students
 router.post('/batches/:batchId/students', async (req, res) => {
   try {
-    // TODO: When auth middleware is ready, organizationId will come from req.user
     const parsed = enrollStudentSchema.parse(req.body);
-    const { organizationId, membershipId } = parsed;
-    const batchId = req.params.batchId;
-
-    const enrollment = await studentService.enrollStudent(organizationId, batchId, membershipId);
+    const enrollment = await studentService.enrollStudent(
+      parsed.workspaceId,
+      req.params.batchId,
+      parsed.membershipId,
+    );
     res.status(201).json(enrollment);
   } catch (err: any) {
     if (err.name === 'ZodError') return res.status(400).json({ error: err.errors });
@@ -29,29 +31,33 @@ router.post('/batches/:batchId/students', async (req, res) => {
   }
 });
 
+// GET /api/v1/batches/:batchId/students
 router.get('/batches/:batchId/students', async (req, res) => {
   try {
-    const organizationId = req.query.organizationId as string;
-    if (!organizationId) return res.status(400).json({ error: 'organizationId is required in query' });
+    const workspaceId = req.query.workspaceId as string;
+    if (!workspaceId) return res.status(400).json({ error: 'workspaceId is required in query' });
 
-    const batchId = req.params.batchId;
-    const page = parseInt((req.query.page as string) || '1', 10);
-    const limit = parseInt((req.query.limit as string) || '20', 10);
+    const page = Math.max(1, parseInt((req.query.page as string) || '1', 10));
+    const limit = Math.min(100, Math.max(1, parseInt((req.query.limit as string) || '20', 10)));
 
-    const result = await studentService.listStudents(organizationId, batchId, page, limit);
+    const result = await studentService.listStudents(workspaceId, req.params.batchId, page, limit);
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
+// DELETE /api/v1/batches/:batchId/students/:batchMembershipId
 router.delete('/batches/:batchId/students/:batchMembershipId', async (req, res) => {
   try {
-    const organizationId = req.query.organizationId as string;
-    if (!organizationId) return res.status(400).json({ error: 'organizationId is required in query' });
+    const workspaceId = req.query.workspaceId as string;
+    if (!workspaceId) return res.status(400).json({ error: 'workspaceId is required in query' });
 
-    const { batchId, batchMembershipId } = req.params;
-    await studentService.revokeStudent(organizationId, batchId, batchMembershipId);
+    await studentService.revokeStudent(
+      workspaceId,
+      req.params.batchId,
+      req.params.batchMembershipId,
+    );
     res.status(204).send();
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -62,12 +68,13 @@ router.delete('/batches/:batchId/students/:batchMembershipId', async (req, res) 
 // Profile Endpoints
 // ==========================================
 
+// GET /api/v1/students/:membershipId/profile
 router.get('/students/:membershipId/profile', async (req, res) => {
   try {
-    const organizationId = req.query.organizationId as string;
-    if (!organizationId) return res.status(400).json({ error: 'organizationId is required in query' });
+    const workspaceId = req.query.workspaceId as string;
+    if (!workspaceId) return res.status(400).json({ error: 'workspaceId is required in query' });
 
-    const profile = await studentService.getStudentProfile(organizationId, req.params.membershipId);
+    const profile = await studentService.getStudentProfile(workspaceId, req.params.membershipId);
     res.json(profile);
   } catch (err: any) {
     res.status(404).json({ error: err.message });
@@ -75,12 +82,14 @@ router.get('/students/:membershipId/profile', async (req, res) => {
 });
 
 const updateProfileSchema = z.object({
-  organizationId: z.string(),
+  workspaceId: z.string().min(1, 'workspaceId is required'),
   phone: z.string().nullable().optional(),
   address: z.string().nullable().optional(),
   avatarUrl: z.string().url().nullable().optional(),
-  courseName: z.string().nullable().optional(),
-  specialization: z.string().nullable().optional(),
+  institution: z.string().nullable().optional(),
+  department: z.string().nullable().optional(),
+  studentId: z.string().nullable().optional(),
+  graduationYear: z.number().int().min(1900).max(2100).nullable().optional(),
   skills: z.array(z.string()).optional(),
   hireStatus: z.nativeEnum(HireStatus).nullable().optional(),
   jobType: z.nativeEnum(JobType).nullable().optional(),
@@ -91,15 +100,16 @@ const updateProfileSchema = z.object({
   linkedinUrl: z.string().url().nullable().optional(),
 });
 
+// PATCH /api/v1/students/:membershipId/profile
 router.patch('/students/:membershipId/profile', async (req, res) => {
   try {
     const parsed = updateProfileSchema.parse(req.body);
-    const { organizationId, ...data } = parsed;
+    const { workspaceId, ...data } = parsed;
 
     const updatedProfile = await studentService.updateStudentProfile(
-      organizationId,
+      workspaceId,
       req.params.membershipId,
-      data
+      data,
     );
     res.json(updatedProfile);
   } catch (err: any) {

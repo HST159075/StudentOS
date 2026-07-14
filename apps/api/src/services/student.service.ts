@@ -1,28 +1,38 @@
+// apps/api/src/services/student.service.ts
 import { prisma } from '../prisma';
 import { HireStatus, JobType, WorkplacePreference } from '@prisma/client';
 
-export async function enrollStudent(organizationId: string, batchId: string, membershipId: string) {
+// ==========================================
+// Enrollment
+// ==========================================
+
+export async function enrollStudent(workspaceId: string, batchId: string, membershipId: string) {
   const batch = await prisma.batch.findFirst({
-    where: { id: batchId, organizationId },
+    where: { id: batchId, workspaceId },
   });
   if (!batch) throw new Error('Batch not found');
 
   const membership = await prisma.membership.findFirst({
-    where: { id: membershipId, organizationId, deletedAt: null },
+    where: { id: membershipId, workspaceId },
   });
-  if (!membership) throw new Error('Membership not found');
+  if (!membership) throw new Error('Membership not found in this workspace');
   if (membership.role !== 'STUDENT') throw new Error('Only students can be enrolled via this endpoint');
 
-  // Check capacity
+  // Check batch capacity (students only)
   if (batch.capacity != null) {
     const currentStudentCount = await prisma.batchMembership.count({
-      where: { batchId, revokedAt: null, membership: { role: 'STUDENT' } },
+      where: {
+        batchId,
+        revokedAt: null,
+        membership: { role: 'STUDENT' },
+      },
     });
     if (currentStudentCount >= batch.capacity) {
       throw new Error('Batch has reached its student capacity');
     }
   }
 
+  // If previously revoked, reactivate instead of creating a duplicate
   const existing = await prisma.batchMembership.findUnique({
     where: { membershipId_batchId: { membershipId, batchId } },
   });
@@ -35,15 +45,16 @@ export async function enrollStudent(organizationId: string, batchId: string, mem
   }
 
   return prisma.batchMembership.create({
-    data: {
-      batchId,
-      membershipId,
-      isCR: false,
-    },
+    data: { batchId, membershipId, isCR: false },
   });
 }
 
-export async function listStudents(organizationId: string, batchId: string, page: number = 1, limit: number = 20) {
+export async function listStudents(
+  workspaceId: string,
+  batchId: string,
+  page: number = 1,
+  limit: number = 20,
+) {
   const skip = (page - 1) * limit;
 
   const [data, total] = await Promise.all([
@@ -51,11 +62,14 @@ export async function listStudents(organizationId: string, batchId: string, page
       where: {
         batchId,
         revokedAt: null,
-        membership: { organizationId, role: 'STUDENT' },
+        membership: { workspaceId, role: 'STUDENT' },
       },
       include: {
         membership: {
-          include: { user: true, studentProfile: true },
+          include: {
+            user: true,
+            studentProfile: true,
+          },
         },
       },
       skip,
@@ -66,25 +80,31 @@ export async function listStudents(organizationId: string, batchId: string, page
       where: {
         batchId,
         revokedAt: null,
-        membership: { organizationId, role: 'STUDENT' },
+        membership: { workspaceId, role: 'STUDENT' },
       },
     }),
   ]);
 
-  return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  return {
+    data,
+    meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+  };
 }
 
-export async function revokeStudent(organizationId: string, batchId: string, batchMembershipId: string) {
+export async function revokeStudent(
+  workspaceId: string,
+  batchId: string,
+  batchMembershipId: string,
+) {
   const batch = await prisma.batch.findFirst({
-    where: { id: batchId, organizationId },
+    where: { id: batchId, workspaceId },
   });
   if (!batch) throw new Error('Batch not found');
 
-  const membership = await prisma.batchMembership.findFirst({
+  const bm = await prisma.batchMembership.findFirst({
     where: { id: batchMembershipId, batchId, revokedAt: null },
-    include: { membership: true },
   });
-  if (!membership) throw new Error('Batch membership not found or already revoked');
+  if (!bm) throw new Error('Batch membership not found or already revoked');
 
   return prisma.batchMembership.update({
     where: { id: batchMembershipId },
@@ -92,14 +112,17 @@ export async function revokeStudent(organizationId: string, batchId: string, bat
   });
 }
 
-export async function getStudentProfile(organizationId: string, membershipId: string) {
+// ==========================================
+// Profile
+// ==========================================
+
+export async function getStudentProfile(workspaceId: string, membershipId: string) {
   const membership = await prisma.membership.findFirst({
-    where: { id: membershipId, organizationId, role: 'STUDENT' },
+    where: { id: membershipId, workspaceId, role: 'STUDENT' },
     include: { studentProfile: true, user: true },
   });
 
   if (!membership) throw new Error('Student membership not found');
-
   return membership;
 }
 
@@ -107,8 +130,10 @@ interface UpdateProfileData {
   phone?: string | null;
   address?: string | null;
   avatarUrl?: string | null;
-  courseName?: string | null;
-  specialization?: string | null;
+  institution?: string | null;
+  department?: string | null;
+  studentId?: string | null;
+  graduationYear?: number | null;
   skills?: string[];
   hireStatus?: HireStatus | null;
   jobType?: JobType | null;
@@ -119,20 +144,39 @@ interface UpdateProfileData {
   linkedinUrl?: string | null;
 }
 
-export async function updateStudentProfile(organizationId: string, membershipId: string, data: UpdateProfileData) {
+export async function updateStudentProfile(
+  workspaceId: string,
+  membershipId: string,
+  data: UpdateProfileData,
+) {
   const membership = await prisma.membership.findFirst({
-    where: { id: membershipId, organizationId, role: 'STUDENT' },
+    where: { id: membershipId, workspaceId, role: 'STUDENT' },
   });
-
   if (!membership) throw new Error('Student membership not found');
+
+  // hireStatus, jobType, workplacePreference have schema defaults — strip nulls
+  // so Prisma falls back to the column default on create (null is not accepted)
+  const { hireStatus, jobType, workplacePreference, ...rest } = data;
+
+  const updatePayload = {
+    ...rest,
+    ...(hireStatus != null ? { hireStatus } : {}),
+    ...(jobType != null ? { jobType } : {}),
+    ...(workplacePreference != null ? { workplacePreference } : {}),
+  };
+
+  const createPayload = {
+    membershipId,
+    ...rest,
+    skills: data.skills ?? [],
+    ...(hireStatus != null ? { hireStatus } : {}),
+    ...(jobType != null ? { jobType } : {}),
+    ...(workplacePreference != null ? { workplacePreference } : {}),
+  };
 
   return prisma.studentProfile.upsert({
     where: { membershipId },
-    update: data,
-    create: {
-      membershipId,
-      ...data,
-      skills: data.skills ?? [],
-    },
+    update: updatePayload,
+    create: createPayload,
   });
 }
