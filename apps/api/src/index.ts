@@ -3,6 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import dotenv from "dotenv";
+import studentRouter from "./routes/student";
 
 dotenv.config();
 
@@ -13,6 +14,8 @@ app.use(helmet());
 app.use(cors());
 app.use(morgan("dev"));
 app.use(express.json());
+
+app.use("/api/v1", studentRouter);
 
 app.get("/", (req, res) => {
   res.status(200).json({
