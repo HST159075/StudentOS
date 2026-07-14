@@ -1,4 +1,3 @@
-// apps/api/src/routes/student.ts
 import { Router } from 'express';
 import { z } from 'zod';
 import * as studentService from '../services/student.service';
@@ -6,16 +5,11 @@ import { HireStatus, JobType, WorkplacePreference } from '@prisma/client';
 
 const router = Router();
 
-// ==========================================
-// Enrollment Endpoints
-// ==========================================
-
 const enrollStudentSchema = z.object({
   workspaceId: z.string().min(1, 'workspaceId is required'),
   membershipId: z.string().min(1, 'membershipId is required'),
 });
 
-// POST /api/v1/batches/:batchId/students
 router.post('/batches/:batchId/students', async (req, res) => {
   try {
     const parsed = enrollStudentSchema.parse(req.body);
@@ -31,7 +25,6 @@ router.post('/batches/:batchId/students', async (req, res) => {
   }
 });
 
-// GET /api/v1/batches/:batchId/students
 router.get('/batches/:batchId/students', async (req, res) => {
   try {
     const workspaceId = req.query.workspaceId as string;
@@ -47,7 +40,6 @@ router.get('/batches/:batchId/students', async (req, res) => {
   }
 });
 
-// DELETE /api/v1/batches/:batchId/students/:batchMembershipId
 router.delete('/batches/:batchId/students/:batchMembershipId', async (req, res) => {
   try {
     const workspaceId = req.query.workspaceId as string;
@@ -64,11 +56,6 @@ router.delete('/batches/:batchId/students/:batchMembershipId', async (req, res) 
   }
 });
 
-// ==========================================
-// Profile Endpoints
-// ==========================================
-
-// GET /api/v1/students/:membershipId/profile
 router.get('/students/:membershipId/profile', async (req, res) => {
   try {
     const workspaceId = req.query.workspaceId as string;
@@ -100,7 +87,6 @@ const updateProfileSchema = z.object({
   linkedinUrl: z.string().url().nullable().optional(),
 });
 
-// PATCH /api/v1/students/:membershipId/profile
 router.patch('/students/:membershipId/profile', async (req, res) => {
   try {
     const parsed = updateProfileSchema.parse(req.body);

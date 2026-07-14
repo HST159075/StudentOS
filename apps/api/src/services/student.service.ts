@@ -1,10 +1,5 @@
-// apps/api/src/services/student.service.ts
 import { prisma } from '../prisma';
 import { HireStatus, JobType, WorkplacePreference } from '@prisma/client';
-
-// ==========================================
-// Enrollment
-// ==========================================
 
 export async function enrollStudent(workspaceId: string, batchId: string, membershipId: string) {
   const batch = await prisma.batch.findFirst({
@@ -18,7 +13,6 @@ export async function enrollStudent(workspaceId: string, batchId: string, member
   if (!membership) throw new Error('Membership not found in this workspace');
   if (membership.role !== 'STUDENT') throw new Error('Only students can be enrolled via this endpoint');
 
-  // Check batch capacity (students only)
   if (batch.capacity != null) {
     const currentStudentCount = await prisma.batchMembership.count({
       where: {
@@ -32,7 +26,6 @@ export async function enrollStudent(workspaceId: string, batchId: string, member
     }
   }
 
-  // If previously revoked, reactivate instead of creating a duplicate
   const existing = await prisma.batchMembership.findUnique({
     where: { membershipId_batchId: { membershipId, batchId } },
   });
@@ -112,10 +105,6 @@ export async function revokeStudent(
   });
 }
 
-// ==========================================
-// Profile
-// ==========================================
-
 export async function getStudentProfile(workspaceId: string, membershipId: string) {
   const membership = await prisma.membership.findFirst({
     where: { id: membershipId, workspaceId, role: 'STUDENT' },
@@ -154,8 +143,6 @@ export async function updateStudentProfile(
   });
   if (!membership) throw new Error('Student membership not found');
 
-  // hireStatus, jobType, workplacePreference have schema defaults — strip nulls
-  // so Prisma falls back to the column default on create (null is not accepted)
   const { hireStatus, jobType, workplacePreference, ...rest } = data;
 
   const updatePayload = {
