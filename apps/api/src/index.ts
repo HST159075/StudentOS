@@ -3,6 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import dotenv from "dotenv";
+import batchRouter from "./routes/batch"
 
 dotenv.config();
 
@@ -13,6 +14,8 @@ app.use(helmet());
 app.use(cors());
 app.use(morgan("dev"));
 app.use(express.json());
+
+app.use("/api/v1/batches", batchRouter);
 
 app.get("/", (req, res) => {
   res.status(200).json({
